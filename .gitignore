@@ -1,0 +1,41 @@
+# --- secrets ---
+.env
+*.env
+
+# --- python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+build/
+dist/
+
+# --- databases ---
+trainer.db
+*.sqlite
+*.sqlite3
+
+# --- vector store ---
+chroma_db/
+
+# --- large data / embeddings (regeneratable via Colab notebook) ---
+ml_books/
+*.parquet
+embeddings_final.npy
+embedded_chunk_ids.json
+chunk_manifest.json
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- jupyter ---
+.ipynb_checkpoints/
+
+# --- logs ---
+*.log
