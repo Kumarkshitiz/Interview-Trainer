@@ -3,23 +3,30 @@ Loads the embedding model once at import time (expensive), and exposes a
 retrieve() function used to ground grading feedback in the actual book text.
 
 IMPORTANT: queries must be embedded with the SAME model used when the
-`ml_kb` collection was built (all-MiniLM-L6-v2). Never use Chroma's
+`kb_store` collection was built (all-MiniLM-L6-v2). Never use Chroma's
 query_texts= here — that falls back to a different default embedding model.
 """
 
 import chromadb
 from sentence_transformers import SentenceTransformer
-from config import CHROMA_PERSIST_DIR, CHROMA_COLLECTION_NAME, EMBEDDING_MODEL_NAME
+from config import CHROMA_PERSIST_DIR, CHROMA_COLLECTION_NAME, EMBEDDING_MODEL_NAME, validate_domain
 
 _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
 _client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
 _collection = _client.get_collection(CHROMA_COLLECTION_NAME)
 
 
-def retrieve(query: str, n_results: int = 3):
-    """Returns a list of {text, source_book, page} dicts most relevant to query."""
+def retrieve(query: str, domain: str, n_results: int = 3):
+    """Returns a list of {text, source_book, page} dicts most relevant to query,
+    restricted to chunks tagged with the given domain."""
+    validate_domain(domain)
+
     query_vec = _model.encode([query], normalize_embeddings=True).tolist()
-    results = _collection.query(query_embeddings=query_vec, n_results=n_results)
+    results = _collection.query(
+        query_embeddings=query_vec,
+        n_results=n_results,
+        where={"domain": domain},
+    )
 
     hits = []
     docs = results.get("documents", [[]])[0]
