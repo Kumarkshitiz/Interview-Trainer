@@ -4,3 +4,10 @@ python-dotenv
 groq
 chromadb
 sentence-transformers
+pandas
+numpy
+pyarrow
+fastapi
+streamlit
+requests
+plotly
