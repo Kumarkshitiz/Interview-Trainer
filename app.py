@@ -14,10 +14,36 @@ Expects the FastAPI backend running separately:
 import streamlit as st
 import requests
 import plotly.graph_objects as go
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+APP_SECRET = os.environ.get("APP_SECRET")
+if not APP_SECRET:
+    st.error("APP_SECRET not set — add APP_SECRET=<your password> to .env next to this file.")
+    st.stop()
 
 API_BASE = "http://127.0.0.1:8000"
 
-st.set_page_config(page_title="Interview Trainer", page_icon="◆", layout="centered")
+st.set_page_config(page_title="Interview Trainer", page_icon="▣", layout="centered")
+
+# ---------------- V3: single-user password gate ----------------
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.markdown("### ▣ interview_trainer")
+    with st.form("login"):
+        pw = st.text_input("Password", type="password")
+        if st.form_submit_button("Enter"):
+            if pw == APP_SECRET:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Wrong password.")
+    st.stop()
+
+AUTH_HEADERS = {"X-App-Secret": APP_SECRET}
 
 DOMAINS = ["ml", "dl", "genai", "bigdata", "dbms", "dsa", "python"]
 DOMAIN_LABELS = {
@@ -29,55 +55,204 @@ DOMAIN_LABELS = {
     "dsa": "Data Structures & Algorithms",
     "python": "Python",
 }
+DOMAIN_TAG = {  # short mono tag, like a file extension / module path
+    "ml": "ml", "dl": "dl", "genai": "genai", "bigdata": "bigdata",
+    "dbms": "dbms", "dsa": "dsa", "python": "py",
+}
 
-# ---- signature palette: deep slate + amber accent, not the default
-# Streamlit blue and not the cream/terracotta AI-design cliche ----
-INK = "#1B1F2A"
-INK_SOFT = "#4A5266"
-PAPER = "#F7F6F3"
-ACCENT = "#E0A458"       # amber -- "in progress" / attempted
-TRACK = "#DDD9D0"        # warm gray -- remaining
-GOOD = "#4C9A6A"
-WARN = "#D9A441"
-BAD = "#C2543F"
+# ---- token system: "examiner's terminal" -- dark graphite console,
+# phosphor-mint accent, monospace readouts for anything measured
+# (scores, tags, progress) vs. serif for the actual question text you
+# have to sit with and think about. Deliberately not the cream+serif
+# or near-black+acid-green defaults. ----
+BG = "#0F1115"
+SURFACE = "#171A21"
+SURFACE_BORDER = "#262B35"
+INK = "#E7E5DE"
+INK_SOFT = "#8B93A7"
+ACCENT = "#6EE7C0"       # phosphor mint -- active / in-progress
+TRACK = "#232833"        # remaining, in the donut
+GOOD = "#6EE7C0"
+WARN = "#E8A23D"
+BAD = "#E2604F"
+DOT_RED = "#4a3b3b"
+DOT_AMBER = "#4a4234"
+DOT_GREEN = "#324a3d"
 
 DIFFICULTY_ICON = {"easy": "●", "medium": "●●", "hard": "●●●"}
 SCORE_COLOR = {5: GOOD, 4: GOOD, 3: WARN, 2: BAD, 1: BAD, 0: INK_SOFT}
 
 st.markdown(f"""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-    .stApp {{ background-color: {PAPER}; }}
-    h1, h2, h3 {{ font-family: 'Georgia', 'Times New Roman', serif; color: {INK}; }}
-    .question-card {{
-        background: white;
-        border: 1px solid #E6E2D8;
-        border-radius: 10px;
-        padding: 1.6rem 1.8rem;
-        margin-bottom: 1rem;
+    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
+    .stApp {{ background-color: {BG}; }}
+    #MainMenu, footer {{ visibility: hidden; }}
+
+    section[data-testid="stSidebar"] {{
+        background-color: {SURFACE};
+        border-right: 1px solid {SURFACE_BORDER};
     }}
+    section[data-testid="stSidebar"] * {{ color: {INK}; }}
+
+    .brand {{
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.82rem;
+        letter-spacing: 0.02em;
+        color: {ACCENT};
+        margin-bottom: 1.1rem;
+    }}
+    .brand span {{ color: {INK_SOFT}; }}
+
     .eyebrow {{
-        font-family: 'Georgia', serif;
-        font-size: 0.78rem;
-        letter-spacing: 0.08em;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
         color: {INK_SOFT};
-        margin-bottom: 0.3rem;
+        margin-bottom: 0.6rem;
     }}
-    div[data-testid="stMetricValue"] {{ color: {INK}; }}
+
+    /* terminal-window question card */
+    .term-card {{
+        background: {SURFACE};
+        border: 1px solid {SURFACE_BORDER};
+        border-radius: 10px;
+        overflow: hidden;
+        margin-bottom: 1.1rem;
+    }}
+    .term-titlebar {{
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        padding: 0.6rem 1rem;
+        border-bottom: 1px solid {SURFACE_BORDER};
+    }}
+    .term-dots {{ display: flex; gap: 6px; flex-shrink: 0; }}
+    .term-dots span {{ width: 9px; height: 9px; border-radius: 50%; display: inline-block; }}
+    .term-path {{
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
+        color: {INK_SOFT};
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }}
+    .term-path b {{ color: {INK}; font-weight: 500; }}
+    .term-diff {{
+        margin-left: auto;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem;
+        color: {ACCENT};
+        flex-shrink: 0;
+    }}
+    .term-body {{
+        padding: 1.5rem 1.6rem 1.7rem;
+        border-left: 3px solid {ACCENT};
+    }}
+    .term-prompt {{
+        font-family: 'JetBrains Mono', monospace;
+        color: {ACCENT};
+        margin-right: 0.5rem;
+    }}
+    .term-question {{
+        font-family: 'Source Serif 4', Georgia, serif;
+        font-size: 1.2rem;
+        line-height: 1.6;
+        color: {INK};
+        display: inline;
+    }}
+
+    /* feedback card */
+    .feedback-card {{
+        background: {SURFACE};
+        border: 1px solid {SURFACE_BORDER};
+        border-radius: 10px;
+        padding: 1.4rem 1.6rem;
+        margin-bottom: 1rem;
+    }}
+    .score-chip {{
+        display: inline-block;
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 600;
+        font-size: 0.95rem;
+        padding: 0.25rem 0.65rem;
+        border-radius: 6px;
+        letter-spacing: 0.02em;
+    }}
+    .fb-label {{
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: {INK_SOFT};
+        margin: 1rem 0 0.35rem;
+    }}
+    .fb-text {{ color: {INK}; line-height: 1.55; font-size: 0.98rem; }}
+
+    /* buttons */
+    .stButton > button {{
+        font-family: 'Inter', sans-serif;
+        font-weight: 500;
+        border-radius: 7px;
+        border: 1px solid {SURFACE_BORDER};
+        background: {SURFACE};
+        color: {INK};
+        transition: border-color 0.15s ease;
+    }}
+    .stButton > button:hover {{
+        border-color: {ACCENT};
+        color: {ACCENT};
+    }}
+    .stButton > button[kind="primary"] {{
+        background: {ACCENT};
+        color: {BG};
+        border: none;
+    }}
+    .stButton > button[kind="primary"]:hover {{
+        background: {ACCENT};
+        opacity: 0.88;
+        color: {BG};
+    }}
+
+    textarea {{
+        background-color: {SURFACE} !important;
+        color: {INK} !important;
+        border-color: {SURFACE_BORDER} !important;
+        font-family: 'Inter', sans-serif !important;
+    }}
+
+    div[data-testid="stMetricValue"] {{ color: {INK}; font-family: 'JetBrains Mono', monospace; }}
+    div[data-testid="stMetricLabel"] {{ color: {INK_SOFT}; }}
+
+    h3 {{ color: {INK}; font-family: 'Inter', sans-serif; font-weight: 600; }}
 </style>
 """, unsafe_allow_html=True)
 
 
-def fetch_next_question(domain: str):
-    resp = requests.get(f"{API_BASE}/question/next", params={"domain": domain}, timeout=15)
+def fetch_next_question(domain: str, topic: str | None = None, exclude_id: int | None = None):
+    params = {"domain": domain}
+    if topic is not None:
+        params["topic"] = topic
+    if exclude_id is not None:
+        params["exclude_id"] = exclude_id
+    resp = requests.get(f"{API_BASE}/question/next", params=params, headers=AUTH_HEADERS, timeout=15)
     resp.raise_for_status()
     return resp.json()
+
+
+def fetch_topics(domain: str):
+    resp = requests.get(f"{API_BASE}/topics", params={"domain": domain}, headers=AUTH_HEADERS, timeout=15)
+    resp.raise_for_status()
+    return resp.json()["topics"]
 
 
 def submit_answer(question_id: int, answer: str):
     resp = requests.post(
         f"{API_BASE}/answer/submit",
         json={"question_id": question_id, "answer": answer},
+        headers=AUTH_HEADERS,
         timeout=60,
     )
     resp.raise_for_status()
@@ -85,7 +260,27 @@ def submit_answer(question_id: int, answer: str):
 
 
 def fetch_summary(domain: str):
-    resp = requests.get(f"{API_BASE}/stats/summary", params={"domain": domain}, timeout=15)
+    resp = requests.get(f"{API_BASE}/stats/summary", params={"domain": domain}, headers=AUTH_HEADERS, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_attempt_history(question_id: int):
+    resp = requests.get(f"{API_BASE}/questions/{question_id}/attempts", headers=AUTH_HEADERS, timeout=15)
+    resp.raise_for_status()
+    return resp.json()["attempts"]
+
+
+def create_custom_question(domain: str, topic: str, subtopic: str, difficulty: str, source_text: str):
+    resp = requests.post(
+        f"{API_BASE}/questions/custom",
+        json={
+            "domain": domain, "topic": topic, "subtopic": subtopic or None,
+            "difficulty": difficulty, "source_text": source_text,
+        },
+        headers=AUTH_HEADERS,
+        timeout=15,
+    )
     resp.raise_for_status()
     return resp.json()
 
@@ -97,16 +292,27 @@ if "current_question" not in st.session_state:
     st.session_state.current_question = None
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
+if "locked_topic" not in st.session_state:
+    st.session_state.locked_topic = None  # None = Auto (priority-driven)
 
 
-def load_new_question():
-    st.session_state.current_question = fetch_next_question(st.session_state.domain)
+def load_new_question(avoid_current: bool = False):
+    """Fetch a new question. When avoid_current=True (Skip / Next), pass the
+    currently-shown question's id so the backend doesn't just hand it right
+    back. Respects a locked topic (Practice Mode) if one is set."""
+    exclude_id = None
+    if avoid_current and st.session_state.current_question:
+        exclude_id = st.session_state.current_question["id"]
+    st.session_state.current_question = fetch_next_question(
+        st.session_state.domain, topic=st.session_state.locked_topic, exclude_id=exclude_id
+    )
     st.session_state.last_result = None
 
 
 # ---------------- sidebar ----------------
 with st.sidebar:
-    st.markdown("### Interview Trainer")
+    st.markdown('<div class="brand">▣ interview<span>_</span>trainer</div>', unsafe_allow_html=True)
+
     selected_domain = st.selectbox(
         "Domain",
         DOMAINS,
@@ -117,10 +323,63 @@ with st.sidebar:
 
     if selected_domain != st.session_state.domain:
         st.session_state.domain = selected_domain
+        st.session_state.locked_topic = None  # topic names don't carry across domains
         load_new_question()
 
-    if st.button("New question", width="stretch"):
+    st.divider()
+    st.markdown('<div class="eyebrow">Practice mode</div>', unsafe_allow_html=True)
+
+    try:
+        topics = fetch_topics(st.session_state.domain)
+    except requests.exceptions.RequestException:
+        topics = []
+
+    topic_options = ["Auto (weakest first)"] + topics
+    current_label = st.session_state.locked_topic or "Auto (weakest first)"
+    selected_label = st.selectbox(
+        "Topic", topic_options,
+        index=topic_options.index(current_label) if current_label in topic_options else 0,
+        label_visibility="collapsed",
+    )
+    new_locked_topic = None if selected_label == "Auto (weakest first)" else selected_label
+
+    if new_locked_topic != st.session_state.locked_topic:
+        st.session_state.locked_topic = new_locked_topic
         load_new_question()
+
+    if st.session_state.locked_topic and topics:
+        idx = topics.index(st.session_state.locked_topic)
+        col_prev, col_next = st.columns(2)
+        with col_prev:
+            if st.button("← Prev", width="stretch", disabled=(idx == 0)):
+                st.session_state.locked_topic = topics[idx - 1]
+                load_new_question()
+                st.rerun()
+        with col_next:
+            if st.button("Next →", width="stretch", disabled=(idx == len(topics) - 1)):
+                st.session_state.locked_topic = topics[idx + 1]
+                load_new_question()
+                st.rerun()
+
+    st.divider()
+    st.markdown('<div class="eyebrow">Add your own question</div>', unsafe_allow_html=True)
+    with st.expander("Add a question"):
+        with st.form("custom_question_form", clear_on_submit=True):
+            cq_topic = st.text_input("Topic", value=st.session_state.locked_topic or "")
+            cq_subtopic = st.text_input("Subtopic (optional)")
+            cq_difficulty = st.selectbox("Difficulty", ["easy", "medium", "hard"], index=1)
+            cq_text = st.text_area("Question text", height=100)
+            if st.form_submit_button("Add & practice now", width="stretch"):
+                if not cq_topic.strip() or not cq_text.strip():
+                    st.warning("Topic and question text are required.")
+                else:
+                    new_q = create_custom_question(
+                        st.session_state.domain, cq_topic.strip(), cq_subtopic.strip(),
+                        cq_difficulty, cq_text.strip()
+                    )
+                    st.session_state.current_question = new_q
+                    st.session_state.last_result = None
+                    st.rerun()
 
     st.divider()
     st.markdown('<div class="eyebrow">Progress</div>', unsafe_allow_html=True)
@@ -138,16 +397,16 @@ with st.sidebar:
 
         fig = go.Figure(data=[go.Pie(
             values=[attempted, remaining],
-            hole=0.68,
-            marker=dict(colors=[ACCENT, TRACK], line=dict(color=PAPER, width=2)),
+            hole=0.7,
+            marker=dict(colors=[ACCENT, TRACK], line=dict(color=SURFACE, width=2)),
             textinfo="none",
             sort=False,
             showlegend=False,
         )])
-        # center label lives INSIDE the donut hole -- no legend, nothing to overlap
         fig.add_annotation(
             text=f"<b>{pct}%</b><br><span style='font-size:11px;color:{INK_SOFT}'>done</span>",
-            x=0.5, y=0.5, showarrow=False, font=dict(size=22, color=INK),
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=22, color=INK, family="JetBrains Mono"),
         )
         fig.update_layout(
             margin=dict(t=6, b=6, l=6, r=6),
@@ -174,13 +433,36 @@ if st.session_state.current_question is None:
         st.stop()
 
 q = st.session_state.current_question
+diff = q["difficulty"]
 
 st.markdown(f"""
-<div class="question-card">
-    <div class="eyebrow">{q['topic']} · {q.get('subtopic') or ''} · {DIFFICULTY_ICON.get(q['difficulty'], '')} {q['difficulty']}</div>
-    <div style="font-size:1.15rem; line-height:1.5; color:{INK};">{q['question']}</div>
+<div class="term-card">
+    <div class="term-titlebar">
+        <div class="term-dots">
+            <span style="background:{DOT_RED}"></span>
+            <span style="background:{DOT_AMBER}"></span>
+            <span style="background:{DOT_GREEN}"></span>
+        </div>
+        <div class="term-path">{DOMAIN_TAG[q['domain']]} / <b>{q['topic']}</b>{' / ' + q['subtopic'] if q.get('subtopic') else ''}</div>
+        <div class="term-diff">{DIFFICULTY_ICON.get(diff, '')} {diff}</div>
+    </div>
+    <div class="term-body">
+        <span class="term-prompt">&gt;</span><span class="term-question">{q['question']}</span>
+    </div>
 </div>
 """, unsafe_allow_html=True)
+
+try:
+    history = fetch_attempt_history(q["id"])
+except requests.exceptions.RequestException:
+    history = []
+
+if history:
+    with st.expander(f"Past attempts on this question ({len(history)})"):
+        for h in history:
+            st.markdown(f"**{h['timestamp']} · score {h['score']}/5**")
+            st.caption(h["your_answer"])
+            st.divider()
 
 answer = st.text_area("Your answer", height=180, key=f"answer_{q['id']}", label_visibility="collapsed",
                        placeholder="Write your answer here...")
@@ -189,10 +471,10 @@ col1, col2 = st.columns(2)
 with col1:
     submit_clicked = st.button("Submit answer", type="primary", width="stretch")
 with col2:
-    skip_clicked = st.button("Skip", width="stretch")
+    skip_clicked = st.button("Next", width="stretch")
 
 if skip_clicked:
-    load_new_question()
+    load_new_question(avoid_current=True)
     st.rerun()
 
 if submit_clicked:
@@ -213,16 +495,12 @@ if st.session_state.last_result:
     color = SCORE_COLOR.get(score, INK_SOFT)
 
     st.markdown(f"""
-    <div class="question-card" style="border-left: 4px solid {color};">
-        <div class="eyebrow">Score</div>
-        <div style="font-size:1.6rem; font-weight:bold; color:{color};">{score}/5</div>
+    <div class="feedback-card">
+        <div class="eyebrow">Result</div>
+        <span class="score-chip" style="background:{color}22; color:{color};">{score}/5</span>
+        {f'<div class="fb-label">What&#39;s missing</div><div class="fb-text">{r["missing"]}</div>' if r["missing"] else ''}
+        <div class="fb-label">Corrected explanation</div>
+        <div class="fb-text">{r['corrected_explanation']}</div>
+        {f'<div class="fb-label">Model answer</div><div class="fb-text">{r["model_answer"]}</div>' if r.get("model_answer") else ''}
+    </div>
     """, unsafe_allow_html=True)
-
-    if r["missing"]:
-        st.markdown(f"**What's missing:** {r['missing']}")
-    st.markdown(f"**Corrected explanation:** {r['corrected_explanation']}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if st.button("Next question", width="stretch"):
-        load_new_question()
-        st.rerun()

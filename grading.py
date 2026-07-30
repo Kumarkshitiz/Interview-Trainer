@@ -17,11 +17,16 @@ Use the provided reference context (excerpts from {label} reference material) to
 factual accuracy, but do not penalize the student for not using the reference's exact
 phrasing — grade the underlying understanding, not the wording.
 
+Also write a model answer: a strong, concise answer to the question as a top
+candidate would actually give it in an interview -- not a textbook excerpt,
+not padded, just what a great answer sounds like out loud.
+
 Respond ONLY with a JSON object in this exact shape, no markdown fences, no extra text:
 {{
   "score": <integer 1-5>,
   "missing": "<1-3 sentences on what's missing or wrong, empty string if score is 5>",
-  "corrected_explanation": "<a concise, correct explanation of the concept, 2-5 sentences>"
+  "corrected_explanation": "<a concise, correct explanation of the concept, 2-5 sentences>",
+  "model_answer": "<a strong exemplar answer to the original question, 2-5 sentences, interview-spoken register not textbook register>"
 }}"""
 
 
@@ -69,7 +74,9 @@ Grade this answer now."""
             "score": 0,
             "missing": "Grading response could not be parsed — please retry.",
             "corrected_explanation": raw[:500],
+            "model_answer": "",
         }
 
     parsed["score"] = int(parsed.get("score", 0))
+    parsed.setdefault("model_answer", "")
     return parsed

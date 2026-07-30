@@ -9,6 +9,14 @@ if not GROQ_API_KEY:
 
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
+# V3: single-user auth. One shared secret gates both the Streamlit UI and
+# the FastAPI backend (LAN-reachable, so this isn't optional even for a
+# single user). V4 swaps this for a real `users` table + per-user check
+# without touching how the frontend/backend talk to each other.
+APP_SECRET = os.environ.get("APP_SECRET")
+if not APP_SECRET:
+    raise RuntimeError("APP_SECRET not found — add APP_SECRET=<your password> to .env.")
+
 DB_PATH = os.environ.get("DB_PATH", "trainer.db")
 CHROMA_PERSIST_DIR = os.environ.get("CHROMA_PERSIST_DIR", "./chroma_db")
 CHROMA_COLLECTION_NAME = os.environ.get("CHROMA_COLLECTION_NAME", "kb_store")  # 'kb' rejected: Chroma needs 3+ chars
@@ -21,6 +29,12 @@ CORRECT_THRESHOLD = 4  # rubric is 1-5
 # takes a `domain` param should validate against this instead of trusting
 # a raw string -- one place to add a domain in V3+, not scattered edits.
 DOMAINS = ["ml", "dl", "genai", "bigdata", "dbms", "dsa", "python"]
+
+# V4: attempts get a real user_id column even though auth is single-user
+# for now (V3). "single_user" is a placeholder constant -- when real
+# multi-user accounts arrive, this becomes the authenticated user's id
+# instead, and nothing else about the attempts schema needs to change.
+DEFAULT_USER_ID = "single_user"
 
 # human-readable labels for prompt templating (grading.py uses these to tell
 # Groq what kind of interview question it's grading)
