@@ -52,3 +52,7 @@ def validate_domain(domain: str) -> str:
     if domain not in DOMAINS:
         raise ValueError(f"Unknown domain '{domain}'. Must be one of: {DOMAINS}")
     return domain
+
+# V20: local Whisper for audio-to-text. "base" is a reasonable CPU speed/
+# accuracy tradeoff -- "small" is more accurate but noticeably slower on CPU.
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")

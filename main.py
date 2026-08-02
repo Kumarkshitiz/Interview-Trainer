@@ -1,10 +1,12 @@
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import os
 
 from db import get_conn
 from retrieval import retrieve
 from grading import grade_answer
+from transcribe import transcribe_audio_bytes
 from config import CORRECT_THRESHOLD, DOMAINS, validate_domain, DEFAULT_USER_ID
 from auth import require_auth
 
@@ -119,10 +121,23 @@ def submit_answer(req: SubmitAnswerRequest):
 
     domain = question["domain"]
 
+    # V9: look up the most recent previous attempt (if any) so grading can
+    # compare the new answer against it directly, not just diff the scores.
+    cur.execute("""
+        SELECT your_answer, score FROM attempts
+        WHERE question_id = ? AND user_id = ?
+        ORDER BY timestamp DESC LIMIT 1
+    """, (req.question_id, DEFAULT_USER_ID))
+    prev_row = cur.fetchone()
+    previous_attempt = {"your_answer": prev_row["your_answer"], "score": prev_row["score"]} if prev_row else None
+
     # domain filter ensures a DSA question never gets graded against
     # ML-retrieved context, etc.
     context_chunks = retrieve(question["source_text"], domain=domain, n_results=3)
-    result = grade_answer(question["source_text"], req.answer, context_chunks, domain=domain)
+    result = grade_answer(
+        question["source_text"], req.answer, context_chunks, domain=domain,
+        previous_attempt=previous_attempt,
+    )
 
     cur.execute(
         "INSERT INTO attempts (question_id, domain, user_id, your_answer, score, feedback, model_answer) "
@@ -150,6 +165,7 @@ def submit_answer(req: SubmitAnswerRequest):
         "missing": result["missing"],
         "corrected_explanation": result["corrected_explanation"],
         "model_answer": result["model_answer"],
+        "comparison": result["comparison"],
     }
 
 
@@ -307,10 +323,24 @@ def create_custom_question(req: CustomQuestionRequest):
     }
 
 
+@app.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    """V20: audio in, transcribed text out. Feeds into the existing text
+    answer pipeline -- the frontend just prefills the answer box with this,
+    nothing about grading/submission changes."""
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio file.")
+    suffix = os.path.splitext(file.filename or "audio.wav")[1] or ".wav"
+    text = transcribe_audio_bytes(audio_bytes, suffix=suffix)
+    return {"text": text}
+
+
 @app.get("/")
 def root():
     return {"status": "ok", "domains": DOMAINS, "endpoints": [
         "/question/next?domain=...&topic=(optional, Practice Mode)&exclude_id=(optional)",
         "/answer/submit (POST)", "/stats?domain=(optional)", "/stats/summary?domain=...",
-        "/topics?domain=...", "/questions/{id}/attempts", "/questions/custom (POST)"
+        "/topics?domain=...", "/questions/{id}/attempts", "/questions/custom (POST)",
+        "/transcribe (POST, audio file)"
     ]}

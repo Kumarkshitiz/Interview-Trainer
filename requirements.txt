@@ -11,3 +11,5 @@ fastapi
 streamlit
 requests
 plotly
+
+openai-whisper   

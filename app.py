@@ -285,6 +285,17 @@ def create_custom_question(domain: str, topic: str, subtopic: str, difficulty: s
     return resp.json()
 
 
+def transcribe_audio(audio_bytes: bytes):
+    resp = requests.post(
+        f"{API_BASE}/transcribe",
+        files={"file": ("recording.wav", audio_bytes, "audio/wav")},
+        headers=AUTH_HEADERS,
+        timeout=60,  # local Whisper on CPU can take a while for longer recordings
+    )
+    resp.raise_for_status()
+    return resp.json()["text"]
+
+
 # ---------------- session state ----------------
 if "domain" not in st.session_state:
     st.session_state.domain = DOMAINS[0]
@@ -464,8 +475,22 @@ if history:
             st.caption(h["your_answer"])
             st.divider()
 
+audio = st.audio_input("Or record your answer", key=f"audio_{q['id']}")
+if audio is not None:
+    audio_bytes = audio.getvalue()
+    audio_fingerprint = (q["id"], len(audio_bytes), hash(audio_bytes))
+    if st.session_state.get("last_transcribed") != audio_fingerprint:
+        with st.spinner("Transcribing..."):
+            try:
+                text = transcribe_audio(audio_bytes)
+                st.session_state[f"answer_{q['id']}"] = text
+                st.session_state["last_transcribed"] = audio_fingerprint
+                st.rerun()
+            except requests.exceptions.RequestException as e:
+                st.error(f"Transcription failed: {e}")
+
 answer = st.text_area("Your answer", height=180, key=f"answer_{q['id']}", label_visibility="collapsed",
-                       placeholder="Write your answer here...")
+                       placeholder="Write your answer here, or record above...")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -502,5 +527,6 @@ if st.session_state.last_result:
         <div class="fb-label">Corrected explanation</div>
         <div class="fb-text">{r['corrected_explanation']}</div>
         {f'<div class="fb-label">Model answer</div><div class="fb-text">{r["model_answer"]}</div>' if r.get("model_answer") else ''}
+        {f'<div class="fb-label">Vs. last attempt</div><div class="fb-text">{r["comparison"]}</div>' if r.get("comparison") else ''}
     </div>
     """, unsafe_allow_html=True)
